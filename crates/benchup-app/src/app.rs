@@ -7447,6 +7447,7 @@ impl eframe::App for BenchUpApp {
         self.outliner_hover.clear();
         self.history_preview = None;
         self.account.poll(&ctx);
+        self.poll_world_engine(&ctx);
         self.poll_project(&ctx);
         #[cfg(not(target_arch = "wasm32"))]
         self.poll_external_file(&ctx);

@@ -575,6 +575,22 @@ impl BenchUpApp {
         self.project.pending = Some(project_files::open_path(ctx, path));
     }
 
+    /// Inside the World Engine: opens geometry the engine sent (rocks, props) as editable groups.
+    pub(super) fn poll_world_engine(&mut self, ctx: &egui::Context) {
+        if !project_files::embedded_in_world_engine() {
+            return;
+        }
+        ctx.request_repaint_after(Duration::from_millis(400));
+        if self.project.blocked() {
+            return;
+        }
+        if let Some((name, extension, bytes)) = project_files::take_world_engine_model() {
+            self.project.operation = Operation::Import;
+            self.project.import_format = extension.clone();
+            self.project.pending = Some(project_files::import_bytes(ctx, self.doc.model.clone(), &extension, &name, &bytes));
+        }
+    }
+
     pub(super) fn poll_project(&mut self, ctx: &egui::Context) {
         if let Some((mut capture, path, contents)) = self.project.preview_save.take() {
             match capture.poll(ctx) {

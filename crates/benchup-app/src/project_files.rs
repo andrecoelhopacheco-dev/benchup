@@ -794,3 +794,56 @@ pub fn send_to_world_engine(name: &str, glb: &[u8]) -> Result<(), String> {
 pub fn send_to_world_engine(_name: &str, _glb: &[u8]) -> Result<(), String> {
     Err("BenchUp is not inside the World Engine".into())
 }
+
+/// A geometry file the World Engine asked BenchUp to open (Motor de Mundo: "Abrir na aba Modelar").
+/// The page queues `{ tipo: "motor-abrir-modelo", nome, formato, bytes }` messages from the same origin and
+/// answers `benchup-recebeu`; this takes the oldest one. Returns (name, extension, bytes).
+#[cfg(target_arch = "wasm32")]
+pub fn take_world_engine_model() -> Option<(String, String, Vec<u8>)> {
+    let take = js_sys::Function::new_no_args(
+        "if (!window.__motorFila) { window.__motorFila = []; \
+           window.addEventListener('message', function (e) { \
+             var d = e.data; \
+             if (e.origin !== window.location.origin || !d || d.tipo !== 'motor-abrir-modelo') return; \
+             if (typeof d.nome !== 'string' || typeof d.formato !== 'string' || !(d.bytes instanceof Uint8Array)) return; \
+             window.__motorFila.push([d.nome, d.formato, d.bytes]); \
+             if (e.source) e.source.postMessage({ tipo: 'benchup-recebeu', nome: d.nome }, window.location.origin); \
+           }); \
+           if (window.parent !== window) window.parent.postMessage({ tipo: 'benchup-pronto' }, window.location.origin); } \
+         var f = window.__motorFila.shift(); return f ? f : null;",
+    );
+    let value = take.call0(&eframe::wasm_bindgen::JsValue::NULL).ok()?;
+    if value.is_null() || value.is_undefined() {
+        return None;
+    }
+    let item = js_sys::Array::from(&value);
+    let name = item.get(0).as_string()?;
+    let extension = item.get(1).as_string()?;
+    let bytes = js_sys::Uint8Array::new(&item.get(2)).to_vec();
+    Some((name, extension, bytes))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn take_world_engine_model() -> Option<(String, String, Vec<u8>)> {
+    None
+}
+
+/// Imports geometry bytes that are already in memory (from the World Engine) as editable groups.
+pub fn import_bytes(
+    ctx: &eframe::egui::Context,
+    model: benchup_core::Model,
+    extension: &str,
+    name: &str,
+    bytes: &[u8],
+) -> Pending {
+    let (sender, receiver) = mpsc::channel();
+    let result = if bytes.len() > crate::interchange::MAX_SKP_BYTES {
+        Err(tr!("project_files.geometry_import_is_limited_to_64_mib_per").into())
+    } else {
+        crate::mesh_exchange::import(bytes, extension, name)
+            .and_then(|imported| prepare_import(model, &imported, false))
+    };
+    let _ = sender.send(result);
+    ctx.request_repaint();
+    receiver
+}
