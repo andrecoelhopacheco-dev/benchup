@@ -53,6 +53,8 @@ pub(super) struct Project {
     pub recent: Vec<RecentProject>,
     pub import_format: String,
     pub export_stl: bool,
+    /// glTF for game engines; not persisted (OBJ/STL stay the remembered default)
+    pub export_glb: bool,
     pub export_scale_open: bool,
     pub modified: bool,
     // Only the desktop poll reads these; the web build never has a project path.
@@ -84,6 +86,7 @@ impl Default for Project {
             recent: Vec::new(),
             import_format: "skp".into(),
             export_stl: false,
+            export_glb: false,
             export_scale_open: false,
             modified: false,
             disk_stamp: None,
@@ -344,7 +347,7 @@ impl BenchUpApp {
         if self.project.blocked() {
             return;
         }
-        if self.project.export_stl {
+        if self.project.export_stl && !self.project.export_glb {
             self.project.export_scale_open = true;
             return;
         }
@@ -367,7 +370,10 @@ impl BenchUpApp {
             self.project.error = Some(errors.join(tr!("projects.joint_error_separator")));
             return;
         }
-        match if self.project.export_stl {
+        let extension = if self.project.export_glb { "glb" } else if self.project.export_stl { "stl" } else { "obj" };
+        match if self.project.export_glb {
+            benchup_io::gltf_export::export_glb(&geometry.model, &self.doc.name)
+        } else if self.project.export_stl {
             if scale == 1. {
                 crate::mesh_exchange::export_stl(&geometry.model)
             } else {
@@ -382,10 +388,23 @@ impl BenchUpApp {
                     ctx,
                     self.doc.name.clone(),
                     contents,
-                    self.project.export_stl,
+                    extension,
                 ));
             }
             Err(error) => self.project.error = Some(error),
+        }
+    }
+
+    /// Sends the visible model as `.glb` to the World Engine that embeds BenchUp (aba Modelar do motor).
+    pub(super) fn send_model_to_world_engine(&mut self) {
+        if self.project.blocked() {
+            return;
+        }
+        let geometry = self.doc.model.evaluate_joinery();
+        let result = benchup_io::gltf_export::export_glb(&geometry.model, &self.doc.name)
+            .and_then(|glb| project_files::send_to_world_engine(&self.doc.name, &glb));
+        if let Err(error) = result {
+            self.project.error = Some(error);
         }
     }
 

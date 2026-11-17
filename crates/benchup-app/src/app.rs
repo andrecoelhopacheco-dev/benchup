@@ -3133,17 +3133,30 @@ impl BenchUpApp {
                                 }
                             });
                             Self::menu_submenu(ui, tr!("app.export"), None, |ui| {
-                                for (stl, label, help) in [
-                                    (false, tr!("app.wavefront_obj_obj"), tr!("app.visible_edges_and_triangulated_faces_in_metres_z")),
-                                    (true, tr!("app.stl_stl_millimetres"), tr!("app.binary_stl_of_visible_faces_in_millimetres_z")),
+                                for (stl, glb, label, help) in [
+                                    (false, true, tr!("app.gltf_glb_for_games"), tr!("app.gltf_glb_for_games_help")),
+                                    (false, false, tr!("app.wavefront_obj_obj"), tr!("app.visible_edges_and_triangulated_faces_in_metres_z")),
+                                    (true, false, tr!("app.stl_stl_millimetres"), tr!("app.binary_stl_of_visible_faces_in_millimetres_z")),
                                 ] {
                                     if ui.add(Self::menu_item_button(ui, label, None)).on_hover_text(help).clicked() && !self.project.blocked() {
-                                        self.project.export_stl = stl;
+                                        if !glb {
+                                            self.project.export_stl = stl;
+                                        }
+                                        self.project.export_glb = glb;
                                         self.export_model(&ctx);
                                         ui.close();
                                     }
                                 }
                             });
+                            if crate::project_files::embedded_in_world_engine()
+                                && ui
+                                    .add(Self::menu_item_button(ui, tr!("app.send_to_world_engine"), None))
+                                    .on_hover_text(tr!("app.send_to_world_engine_help"))
+                                    .clicked()
+                            {
+                                self.send_model_to_world_engine();
+                                ui.close();
+                            }
                             ui.separator();
                             if ui.add(Self::menu_item_button(ui, tr!("app.settings"), Some("settings"))).clicked() {
                                 self.settings_open = true;

@@ -585,9 +585,8 @@ pub fn import(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn export(ctx: &eframe::egui::Context, name: String, contents: Vec<u8>, stl: bool) -> Pending {
+pub fn export(ctx: &eframe::egui::Context, name: String, contents: Vec<u8>, extension: &'static str) -> Pending {
     run(ctx, move || {
-        let extension = if stl { "stl" } else { "obj" };
         let Some(path) = rfd::FileDialog::new()
             .set_title(tr!("project_files.export_geometry"))
             .add_filter(tr!("project_files.geometry"), &[extension])
@@ -602,10 +601,10 @@ pub fn export(ctx: &eframe::egui::Context, name: String, contents: Vec<u8>, stl:
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn export(ctx: &eframe::egui::Context, name: String, contents: Vec<u8>, stl: bool) -> Pending {
+pub fn export(ctx: &eframe::egui::Context, name: String, contents: Vec<u8>, extension: &'static str) -> Pending {
     let (sender, receiver) = mpsc::channel();
     let result = download_bytes(
-        &exchange_name(&name, if stl { "stl" } else { "obj" }),
+        &exchange_name(&name, extension),
         &contents,
         "application/octet-stream",
     )
@@ -755,3 +754,43 @@ pub fn extract_preview(path: &std::path::Path, output: &std::path::Path) -> Resu
     image.save_with_format(output, image::ImageFormat::Png).map_err(|e| e.to_string())
 }
 
+
+/// True when BenchUp runs inside the Jogo Stickman World Engine (same-origin iframe opened with `?motor=1`).
+#[cfg(target_arch = "wasm32")]
+pub fn embedded_in_world_engine() -> bool {
+    js_sys::Function::new_no_args(
+        "try { return window.parent !== window && new URLSearchParams(location.search).has('motor') \
+         && window.parent.location.origin === window.location.origin; } catch (e) { return false; }",
+    )
+    .call0(&eframe::wasm_bindgen::JsValue::NULL)
+    .ok()
+    .and_then(|v| v.as_bool())
+    .unwrap_or(false)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn embedded_in_world_engine() -> bool {
+    false
+}
+
+/// Hands a `.glb` to the World Engine page that embeds BenchUp. Only the same origin receives it.
+#[cfg(target_arch = "wasm32")]
+pub fn send_to_world_engine(name: &str, glb: &[u8]) -> Result<(), String> {
+    let post = js_sys::Function::new_with_args(
+        "nome, bytes",
+        "if (window.parent === window) throw new Error('BenchUp is not inside the World Engine'); \
+         window.parent.postMessage({ tipo: 'benchup-glb', nome: nome, bytes: bytes }, window.location.origin);",
+    );
+    post.call2(
+        &eframe::wasm_bindgen::JsValue::NULL,
+        &name.into(),
+        &js_sys::Uint8Array::from(glb),
+    )
+    .map(|_| ())
+    .map_err(|e| e.as_string().unwrap_or_else(|| "postMessage failed".into()))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn send_to_world_engine(_name: &str, _glb: &[u8]) -> Result<(), String> {
+    Err("BenchUp is not inside the World Engine".into())
+}
