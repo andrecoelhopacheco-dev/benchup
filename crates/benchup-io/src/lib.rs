@@ -4,5 +4,6 @@
 //! so UI edits can reuse parsers, exporters, and the embedded browser SKP reader.
 
 pub mod interchange;
+pub mod gltf_export;
 pub mod mesh_exchange;
 mod skp_recovery;
