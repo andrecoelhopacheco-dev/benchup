@@ -28,6 +28,28 @@ pub(super) enum ContextAction {
 }
 
 impl BenchUpApp {
+    /// Right click in the viewport: drop the current drawing state and open the context menu for what is under
+    /// the pointer.
+    pub(super) fn open_viewport_context(&mut self, pos: Pos2) {
+        self.solid_first = None;
+        self.follow_me.reset();
+        self.flip_hover = None;
+        self.measurement = None;
+        self.drawing = None;
+        self.gesture = None;
+        self.paste_preview = None;
+        self.modeling = None;
+        self.last_move_copy = None;
+        self.length_input.clear();
+        self.context_position = Some(pos);
+        let hit = self.pick_at(
+            dv(pos - self.viewport.min),
+            dv(self.viewport.size()),
+            true,
+        );
+        self.select_context_target(hit);
+    }
+
     pub(super) fn select_context_target(&mut self, id: Option<u64>) {
         if !id.is_some_and(|id| self.selected.contains(&id)) {
             self.selected = id.into_iter().collect();

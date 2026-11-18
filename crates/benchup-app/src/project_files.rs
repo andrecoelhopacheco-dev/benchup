@@ -755,6 +755,12 @@ pub fn extract_preview(path: &std::path::Path, output: &std::path::Path) -> Resu
 }
 
 
+/// `embedded_in_world_engine`, asked once (it does not change while the page is open).
+pub fn in_world_engine() -> bool {
+    static EMBEDDED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *EMBEDDED.get_or_init(embedded_in_world_engine)
+}
+
 /// True when BenchUp runs inside the Jogo Stickman World Engine (same-origin iframe opened with `?motor=1`).
 #[cfg(target_arch = "wasm32")]
 pub fn embedded_in_world_engine() -> bool {
