@@ -5291,24 +5291,25 @@ impl BenchUpApp {
                         }
                     }
                     self.update_drawing_orbit(modifiers);
-                    if button == egui::PointerButton::Secondary {
-                        self.solid_first = None;
-                        self.follow_me.reset();
+                    // Inside the World Engine the camera works like every other view of the engine: right-drag
+                    // orbits (Shift pans), middle pans; a right click that does not move still opens the menu.
+                    if button == egui::PointerButton::Secondary
+                        && crate::project_files::in_world_engine()
+                        && self.gesture.is_none()
+                    {
+                        self.hover = None;
                         self.flip_hover = None;
-                        self.measurement = None;
-                        self.drawing = None;
-                        self.gesture = None;
-                        self.paste_preview = None;
-                        self.modeling = None;
-                        self.last_move_copy = None;
-                        self.length_input.clear();
-                        self.context_position = Some(pos);
-                        let hit = self.pick_at(
-                            dv(pos - self.viewport.min),
-                            dv(self.viewport.size()),
-                            true,
-                        );
-                        self.select_context_target(hit);
+                        self.drawing_orbit_pivot = None;
+                        self.gesture = Some(Gesture {
+                            button,
+                            start: pos,
+                            last: pos,
+                            kind: GestureKind::Navigate { pivot: None },
+                        });
+                        continue;
+                    }
+                    if button == egui::PointerButton::Secondary {
+                        self.open_viewport_context(pos);
                         continue;
                     }
                     if self.gesture.is_some() {
@@ -5459,6 +5460,12 @@ impl BenchUpApp {
                                 self.doc.camera.set_standard_view(axis.view());
                                 self.changed(ctx);
                                 ctx.request_repaint();
+                            }
+                            GestureKind::Navigate { .. }
+                                if gesture.button == egui::PointerButton::Secondary
+                                    && gesture.start.distance(pos) < 5. =>
+                            {
+                                self.open_viewport_context(pos);
                             }
                             GestureKind::Navigate { .. } | GestureKind::DrawingNavigate => {}
                             GestureKind::Select { additive } => {

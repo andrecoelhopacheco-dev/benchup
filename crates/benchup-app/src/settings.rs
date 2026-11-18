@@ -244,7 +244,10 @@ impl GeneralSettings {
     pub(super) fn navigation_pans(&self, button: Option<egui::PointerButton>, shift: bool) -> bool {
         // Shift switches modes during a drag; only middle-button navigation
         // uses the alternate mapping. Orbit-tool and drawing controls stay fixed.
-        shift ^ (button == Some(egui::PointerButton::Middle) && self.middle_mouse_pan)
+        // Inside the World Engine the middle button always pans (the engine's camera: right orbits, middle pans).
+        shift
+            ^ (button == Some(egui::PointerButton::Middle)
+                && (self.middle_mouse_pan || crate::project_files::in_world_engine()))
     }
 
     // Keep the existing serialized fields and input-device bindings independent.
