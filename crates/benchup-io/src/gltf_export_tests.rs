@@ -1,5 +1,6 @@
 use super::*;
 use benchup_core::DVec3;
+use std::collections::BTreeSet;
 
 /// A 2 m × 1 m × 0.5 m box, red on top, built the way the user does it (rectangle, then push/pull).
 fn box_model() -> Model {
@@ -80,4 +81,28 @@ fn uvs_are_in_metres_so_textures_tile_per_metre() {
 #[test]
 fn empty_model_is_an_error() {
     assert!(export_glb(&Model::default(), "Nada").is_err());
+}
+
+#[test]
+fn groups_with_the_same_colour_stay_separate_materials() {
+    // tree: trunk and canopy as two groups, both left grey (the World Engine textures each one on its own)
+    let mut model = Model::default();
+    let add_box = |model: &mut Model, x: f64| {
+        let before: BTreeSet<u64> = model.faces.keys().chain(model.edges.keys()).copied().collect();
+        let corners = [DVec3::new(x, 0., 0.), DVec3::new(x + 1., 0., 0.), DVec3::new(x + 1., 1., 0.), DVec3::new(x, 1., 0.)];
+        for i in 0..4 {
+            model.add_edge(corners[i], corners[(i + 1) % 4]).unwrap();
+        }
+        let base = *model.faces.keys().find(|k| !before.contains(k)).unwrap();
+        model.push_pull(base, 1.).unwrap();
+        model.faces.keys().chain(model.edges.keys()).copied().filter(|k| !before.contains(k)).collect::<BTreeSet<u64>>()
+    };
+    let trunk = add_box(&mut model, 0.);
+    model.make_object(&trunk, false, "tronco").unwrap();
+    let canopy = add_box(&mut model, 3.);
+    model.make_object(&canopy, true, "copa").unwrap();
+    let (json, _) = parse(&export_glb(&model, "Arvore").unwrap());
+    let names: Vec<&str> = json["materials"].as_array().unwrap().iter().map(|m| m["name"].as_str().unwrap()).collect();
+    assert_eq!(json["meshes"][0]["primitives"].as_array().unwrap().len(), 2, "{names:?}");
+    assert!(names.contains(&"tronco_cor_c8c8c8") && names.contains(&"copa_cor_c8c8c8"), "{names:?}");
 }
