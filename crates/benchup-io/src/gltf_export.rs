@@ -5,8 +5,9 @@
 //!   edges stay hard).
 //! - `TEXCOORD_0` uses a box projection in metres: a texture with `repeat` covers one metre per tile, which
 //!   is what a tiling PBR material (Poly Haven, FreeStylized) expects.
-//! - One primitive per face colour, each with a PBR metallic-roughness material (double-sided, because
-//!   push/pull faces are not guaranteed to be wound outward).
+//! - One primitive per (top-level group or component, face colour), each with a PBR metallic-roughness material
+//!   (double-sided, because push/pull faces are not guaranteed to be wound outward). Separate groups stay separate
+//!   materials even when they share a colour, so an engine can texture each part on its own (World Engine bucket).
 use benchup_core::{DVec3, Model};
 use std::collections::BTreeMap;
 
@@ -44,11 +45,24 @@ fn box_uv(p: [f32; 3], n: [f32; 3]) -> [f32; 2] {
     }
 }
 
-fn collect(model: &Model) -> BTreeMap<[u8; 3], Primitive> {
-    let mut by_color: BTreeMap<[u8; 3], Primitive> = BTreeMap::new();
+/// Primitive key: the top-level object holding the face (0 for loose geometry), then the face colour.
+type Key = (u64, [u8; 3]);
+
+fn collect(model: &Model) -> BTreeMap<Key, Primitive> {
+    let parent: BTreeMap<u64, u64> =
+        model.objects.values().flat_map(|o| o.entities.iter().map(move |e| (*e, o.id))).collect();
+    let root = |mut id: u64| -> u64 {
+        let mut top = 0;
+        while let Some(&p) = parent.get(&id) {
+            top = p;
+            id = p;
+        }
+        top
+    };
+    let mut by_color: BTreeMap<Key, Primitive> = BTreeMap::new();
     for face in model.faces.values().filter(|f| !model.is_hidden(f.id)) {
         let color = model.face_colors.get(&face.id).copied().unwrap_or(DEFAULT_COLOR);
-        let prim = by_color.entry(color).or_default();
+        let prim = by_color.entry((root(face.id), color)).or_default();
         for tri in model.face_triangles(face) {
             let [a, b, c] = tri.map(to_gltf);
             let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
@@ -123,6 +137,16 @@ impl Writer {
     }
 }
 
+/// `cor_rrggbb`, prefixed with the group/component name when the face belongs to one (`copa_cor_3a7d2c`).
+fn material_name(model: &Model, object: u64, color: [u8; 3]) -> String {
+    let cor = format!("cor_{:02x}{:02x}{:02x}", color[0], color[1], color[2]);
+    match model.objects.get(&object).map(|o| o.name.trim()).filter(|n| !n.is_empty()) {
+        Some(name) => format!("{name}_{cor}"),
+        None if object != 0 => format!("grupo{object}_{cor}"),
+        None => cor,
+    }
+}
+
 fn srgb_to_linear(c: u8) -> f64 {
     let s = f64::from(c) / 255.;
     if s <= 0.04045 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) }
@@ -137,13 +161,13 @@ pub fn export_glb(model: &Model, name: &str) -> Result<Vec<u8>, String> {
     let mut w = Writer { bin: Vec::new(), views: Vec::new(), accessors: Vec::new() };
     let mut primitives = Vec::new();
     let mut materials = Vec::new();
-    for (color, prim) in &groups {
+    for ((object, color), prim) in &groups {
         let position = w.vec_accessor(&prim.positions, true);
         let normal = w.vec_accessor(&prim.normals, false);
         let uv = w.vec_accessor(&prim.uvs, false);
         let indices = w.index_accessor(&prim.indices);
         materials.push(serde_json::json!({
-            "name": format!("cor_{:02x}{:02x}{:02x}", color[0], color[1], color[2]),
+            "name": material_name(model, *object, *color),
             "doubleSided": true,
             "pbrMetallicRoughness": {
                 "baseColorFactor": [srgb_to_linear(color[0]), srgb_to_linear(color[1]), srgb_to_linear(color[2]), 1.0],
